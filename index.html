@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>macOS Tahoe — Single‑File Simulator</title>
+    <style>
+        :root {
+            --tahoe-glass-bg: rgba(255, 255, 255, .55);
+            --tahoe-glass-strong: rgba(255, 255, 255, .7);
+            --tahoe-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+            --radius: 14px;
+            --titlebar-h: 32px;
+            --dock-h: 74px;
+            --accent: #2b7fff;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            height: 100%
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(180deg, #b7cdfd 0%, #dfe9ff 40%, #eef4ff 100%);
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Subtle wallpaper grain */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image: radial-gradient(rgba(0, 0, 0, .06) 1px, transparent 1px);
+            background-size: 3px 3px;
+            opacity: .25;
+            mix-blend-mode: soft-light;
+        }
+
+        /* ===== Menu bar ===== */
+        .menubar {
+            position: fixed;
+            inset: 0 0 auto 0;
+            height: 28px;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 10px;
+            background: var(--tahoe-glass-bg);
+            -webkit-backdrop-filter: blur(18px) saturate(160%);
+            backdrop-filter: blur(18px) saturate(160%);
+            border-bottom: 1px solid rgba(255, 255, 255, .6);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, .3) inset;
+            font-size: 13px;
+        }
+
+        .apple {
+            font-size: 16px;
+        }
+
+        .menu {
+            padding: 4px 6px;
+            border-radius: 6px
+        }
+
+        .menu:hover {
+            background: rgba(0, 0, 0, .06)
+        }
+
+        .menubar .spacer {
+            flex: 1
+        }
+
+        .status {
+            display: flex;
+            gap: 12px;
+            align-items: center
+        }
+
+        /* ===== Dock ===== */
+        .dock-wrap {
+            position: fixed;
+            left: 50%;
+            bottom: 10px;
+            transform: translateX(-50%);
+            z-index: 9000
+        }
+
+        .dock {
+            height: var(--dock-h);
+            background: var(--tahoe-glass-bg);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: 22px;
+            padding: 8px 14px;
+            display: flex;
+            align-items: flex-end;
+            gap: 14px;
+            box-shadow: var(--tahoe-shadow), 0 1px 0 rgba(255, 255, 255, .5) inset;
+            border: 1px solid rgba(255, 255, 255, .65);
+        }
+
+        .dock .icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            font-size: 30px;
+            cursor: pointer;
+            transition: transform .15s ease, filter .2s ease;
+            background: rgba(255, 255, 255, .55);
+            -webkit-backdrop-filter: blur(20px) saturate(170%);
+            backdrop-filter: blur(20px) saturate(170%);
+            border: 1px solid rgba(255, 255, 255, .7);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, .18);
+        }
+
+        .dock .icon:hover {
+            transform: translateY(-8px) scale(1.12)
+        }
+
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #1a1a1a;
+            opacity: .3;
+            margin: 6px auto 0;
+        }
+
+        .icon.running+.indicator {
+            opacity: .7
+        }
+
+        /* ===== Windows ===== */
+        .window {
+            position: absolute;
+            top: 90px;
+            left: 90px;
+            width: 540px;
+            min-width: 280px;
+            min-height: 220px;
+            background: var(--tahoe-glass-strong);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-radius: var(--radius);
+            box-shadow: var(--tahoe-shadow);
+            border: 1px solid rgba(255, 255, 255, .75);
+            overflow: hidden;
+        }
+
+        .hidden {
+            display: none
+        }
+
+        .titlebar {
+            height: var(--titlebar-h);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 10px;
+            cursor: move;
+            font-size: 13px;
+            font-weight: 600;
+            background: linear-gradient(180deg, rgba(255, 255, 255, .85), rgba(255, 255, 255, .6));
+            border-bottom: 1px solid rgba(0, 0, 0, .06);
+        }
+
+        .traffic {
+            display: flex;
+            gap: 8px;
+            align-items: center
+        }
+
+        .btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            border: 1px solid rgba(0, 0, 0, .15);
+        }
+
+        .close {
+            background: #ff5f57
+        }
+
+        .min {
+            background: #febc2e
+        }
+
+        .max {
+            background: #28c840
+        }
+
+        .title {
+            flex: 1;
+            text-align: center;
+            color: #222;
+            font-weight: 600;
+            pointer-events: none
+        }
+
+        .content {
+            padding: 12px;
+            height: calc(100% - var(--titlebar-h));
+            overflow: auto;
+            -webkit-overflow-scrolling: touch
+        }
+
+        .resize {
+            position: absolute;
+            right: 8px;
+            bottom: 8px;
+            width: 14px;
+            height: 14px;
+            cursor: nwse-resize;
+            opacity: .6
+        }
+
+        .resize::after {
+            content: "";
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%;
+            border-right: 2px solid rgba(0, 0, 0, .25);
+            border-bottom: 2px solid rgba(0, 0, 0, .25);
+            border-radius: 2px
+        }
+
+        .maximized {
+            inset: 28px 10px var(--dock-h) 10px !important;
+            width: auto !important;
+            height: auto !important
+        }
+
+        /* ===== Apps ===== */
+        .finder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px
+        }
+
+        .tile {
+            background: rgba(255, 255, 255, .6);
+            border: 1px solid rgba(255, 255, 255, .8);
+            padding: 10px;
+            border-radius: 12px;
+            text-align: center
+        }
+
+        .notes textarea {
+            width: 100%;
+            height: 45vh;
+            border: 0;
+            outline: 0;
+            background: rgba(255, 255, 255, .6);
+            border-radius: 12px;
+            padding: 12px;
+            font-size: 14px
+        }
+
+        .safari input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(0, 0, 0, .1);
+            margin-bottom: 8px
+        }
+
+        .safari iframe {
+            width: 100%;
+            height: 45vh;
+            border: 0;
+            border-radius: 12px;
+            background: white
+        }
+
+        .safari-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .safari-toolbar button {
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent);
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            transition: .2s;
+        }
+
+        .safari-toolbar button:hover {
+            background: #1a5fcc;
+        }
+
+        .safari-toolbar input {
+            flex: 1;
+            padding: 6px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 0, 0, .1);
+            font-size: 14px;
+        }
+
+        #safari-frame {
+            width: 100%;
+            height: calc(100% - 50px);
+            border: none;
+            border-radius: 12px;
+        }
+
+
+        .settings .row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px dashed rgba(0, 0, 0, .08)
+        }
+
+        .settings label {
+            font-weight: 600
+        }
+
+        /* ===== Launchpad ===== */
+        .launchpad {
+            position: fixed;
+            inset: 28px 0 0 0;
+            z-index: 9500;
+            display: none;
+            background: rgba(240, 245, 255, .55);
+            -webkit-backdrop-filter: blur(24px) saturate(180%);
+            backdrop-filter: blur(24px) saturate(180%);
+        }
+
+        .launchpad.show {
+            display: block
+        }
+
+        .lp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+            gap: 22px;
+            padding: 30px;
+        }
+
+        .lp-app {
+            display: grid;
+            place-items: center;
+            gap: 8px;
+            cursor: pointer
+        }
+
+        .lp-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 18px;
+            display: grid;
+            place-items: center;
+            font-size: 36px;
+            background: rgba(255, 255, 255, .65);
+            border: 1px solid rgba(255, 255, 255, .8);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, .15)
+        }
+
+        .lp-name {
+            font-size: 12px
+        }
+
+        /* Selection */
+        ::selection {
+            background: rgba(43, 127, 255, .25)
+        }
+    </style>
+</head>
+
+<body>
+    <!-- ===== Menu Bar ===== -->
+    <div class="menubar" id="menubar">
+        <div class="apple" title="Apple icon">🍎</div>
+        <div class="menu">Finder</div>
+        <div class="menu">File</div>
+        <div class="menu">Edit</div>
+        <div class="menu">View</div>
+        <div class="menu" id="launchpadToggle">Launchpad</div>
+        <div class="spacer"></div>
+        <div class="status">
+            <span id="wifi">📶</span>
+            <span id="battery">🔋100%</span>
+            <span id="clock">--:--</span>
+        </div>
+    </div>
+
+    <!-- ===== Windows ===== -->
+    <div class="window" id="win-finder" data-app="finder" style="top:90px;left:90px;width:640px">
+        <div class="titlebar">
+            <div class="traffic">
+                <span class="btn close" data-action="close"></span>
+                <span class="btn min" data-action="min"></span>
+                <span class="btn max" data-action="max"></span>
+            </div>
+            <div class="title">Finder</div>
+        </div>
+        <div class="content finder">
+            <div class="finder-grid">
+                <div class="tile">📄 Document</div>
+                <div class="tile">🖼️ Pictures</div>
+                <div class="tile">🎵 Music</div>
+                <div class="tile">🎬 Movies</div>
+                <div class="tile">⚙️ System</div>
+                <div class="tile">🗑️ Bin</div>
+            </div>
+        </div>
+        <div class="resize"></div>
+    </div>
+
+    <div class="window hidden" id="win-notes" data-app="notes" style="top:140px;left:220px;width:520px">
+        <div class="titlebar">
+            <div class="traffic">
+                <span class="btn close" data-action="close"></span>
+                <span class="btn min" data-action="min"></span>
+                <span class="btn max" data-action="max"></span>
+            </div>
+            <div class="title">Notes</div>
+        </div>
+        <div class="content notes">
+            <textarea id="notesArea" placeholder="Type your note…"></textarea>
+        </div>
+        <div class="resize"></div>
+    </div>
+
+    <div class="window hidden" id="win-safari" data-app="safari" style="top:180px;left:160px;width:760px">
+        <div class="titlebar">
+            <div class="traffic">
+                <span class="btn close" data-action="close"></span>
+                <span class="btn min" data-action="min"></span>
+                <span class="btn max" data-action="max"></span>
+            </div>
+            <div class="title">Safari</div>
+        </div>
+        <div class="content safari">
+            <div class="safari-toolbar">
+                <button id="safari-back">◀</button>
+                <button id="safari-forward">▶</button>
+                <button id="safari-refresh">⟳</button>
+                <input id="safari-url" type="text" placeholder="https://example.com" />
+                <button id="safari-go">Go</button>
+            </div>
+            <iframe id="safari-frame" sandbox="allow-scripts allow-forms allow-same-origin"></iframe>
+        </div>
+        <div class="resize"></div>
+    </div>
+
+
+    <div class="window hidden" id="win-settings" data-app="settings" style="top:120px;left:440px;width:520px">
+        <div class="titlebar">
+            <div class="traffic">
+                <span class="btn close" data-action="close"></span>
+                <span class="btn min" data-action="min"></span>
+                <span class="btn max" data-action="max"></span>
+            </div>
+            <div class="title">Settings</div>
+        </div>
+        <div class="content settings">
+            <div class="row">
+                <label>Wallpaper</label>
+                <select id="wallpaper">
+                    <option value="default">Tahoe Blue</option>
+                    <option value="sunset">Sunset Peach</option>
+                    <option value="mint">Mint Mist</option>
+                    <option value="graphite">Graphite</option>
+                </select>
+            </div>
+            <div class="row">
+                <label>Glass Blur</label>
+                <input id="blur" type="range" min="6" max="30" value="20" />
+            </div>
+            <div class="row">
+                <label>Accent</label>
+                <input id="accent" type="color" value="#2b7fff" />
+            </div>
+            <div class="row">
+                <button id="about">About This Mac</button>
+            </div>
+        </div>
+        <div class="resize"></div>
+    </div>
+
+    <!-- ===== Launchpad ===== -->
+    <div class="launchpad" id="launchpad">
+        <div class="lp-grid">
+            <div class="lp-app" data-open="finder">
+                <div class="lp-icon">🗂️</div>
+                <div class="lp-name">Finder</div>
+            </div>
+            <div class="lp-app" data-open="safari">
+                <div class="lp-icon">🌐</div>
+                <div class="lp-name">Safari</div>
+            </div>
+            <div class="lp-app" data-open="notes">
+                <div class="lp-icon">📝</div>
+                <div class="lp-name">Notes</div>
+            </div>
+            <div class="lp-app" data-open="settings">
+                <div class="lp-icon">⚙️</div>
+                <div class="lp-name">Settings</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== Dock ===== -->
+    <div class="dock-wrap">
+        <div class="dock" id="dock">
+            <div class="icon" data-open="finder" title="Finder">🗂️</div>
+            <div class="indicator"></div>
+            <div class="icon" data-open="safari" title="Safari">🌐</div>
+            <div class="indicator"></div>
+            <div class="icon" data-open="notes" title="Notes">📝</div>
+            <div class="indicator"></div>
+            <div class="icon" data-open="settings" title="Settings">⚙️</div>
+            <div class="indicator"></div>
+            <div class="icon" id="lpIcon" title="Launchpad">🟦</div>
+        </div>
+    </div>
+
+    <script>
+        // ===== Utilities =====
+        const $ = sel => document.querySelector(sel);
+        const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+        // Live clock
+        const clockEl = $('#clock');
+
+        function tick() {
+            const d = new Date();
+            clockEl.textContent = d.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        tick();
+        setInterval(tick, 1000);
+
+        // Battery (fake)
+        let b = 100;
+        setInterval(() => {
+            b = Math.max(1, b - 1);
+            $('#battery').textContent = '🔋' + b + '%';
+        }, 20000);
+
+        // ===== Window Manager =====
+        let z = 1;
+
+        function bringToFront(win) {
+            win.style.zIndex = ++z;
+        }
+
+        function openApp(id) {
+            const win = document.getElementById('win-' + id);
+            if (!win) return;
+            win.classList.remove('hidden');
+            bringToFront(win);
+            // Dock indicator
+            const dockIcon = document.querySelector('.dock .icon[data-open="' + id + '"]');
+            if (dockIcon) {
+                dockIcon.classList.add('running');
+                dockIcon.nextElementSibling.classList.add('on');
+            }
+        }
+
+        function closeApp(id) {
+            const win = document.getElementById('win-' + id);
+            if (!win) return;
+            win.classList.add('hidden');
+            const dockIcon = document.querySelector('.dock .icon[data-open="' + id + '"]');
+            if (dockIcon) {
+                dockIcon.classList.remove('running');
+            }
+        }
+
+        // Dock clicks
+        $$('#dock .icon[data-open]').forEach(icon => {
+            icon.addEventListener('click', () => openApp(icon.dataset.open));
+        });
+
+        // Traffic buttons
+        $$('.window').forEach(win => {
+            win.addEventListener('mousedown', () => bringToFront(win));
+            const bar = win.querySelector('.titlebar');
+            const resize = win.querySelector('.resize');
+
+            // drag
+            let drag = false,
+                offX = 0,
+                offY = 0;
+            bar.addEventListener('mousedown', e => {
+                if (e.target.classList.contains('btn')) return; // allow clicking buttons
+                drag = true;
+                offX = e.clientX - win.offsetLeft;
+                offY = e.clientY - win.offsetTop;
+                bringToFront(win);
+            });
+            window.addEventListener('mousemove', e => {
+                if (!drag) return;
+                const x = e.clientX - offX;
+                const y = e.clientY - offY;
+                win.style.left = x + 'px';
+                win.style.top = y + 'px';
+            });
+            window.addEventListener('mouseup', () => drag = false);
+
+            // resize
+            let rs = false,
+                startW = 0,
+                startH = 0,
+                sx = 0,
+                sy = 0;
+            resize.addEventListener('mousedown', e => {
+                rs = true;
+                startW = win.offsetWidth;
+                startH = win.offsetHeight;
+                sx = e.clientX;
+                sy = e.clientY;
+                e.preventDefault();
+                bringToFront(win);
+            });
+            window.addEventListener('mousemove', e => {
+                if (!rs) return;
+                const dw = e.clientX - sx;
+                const dh = e.clientY - sy;
+                win.style.width = Math.max(280, startW + dw) + 'px';
+                win.style.height = Math.max(200, startH + dh) + 'px';
+            });
+            window.addEventListener('mouseup', () => rs = false);
+
+            // buttons
+            win.querySelector('[data-action="close"]').addEventListener('click', () => closeApp(win.dataset.app));
+            win.querySelector('[data-action="min"]').addEventListener('click', () => win.classList.add('hidden'));
+            win.querySelector('[data-action="max"]').addEventListener('click', () => win.classList.toggle('maximized'));
+
+            // double-click titlebar to zoom
+            bar.addEventListener('dblclick', () => win.classList.toggle('maximized'));
+        });
+
+        // ===== Launchpad =====
+        const lp = $('#launchpad');
+        const toggleLP = () => lp.classList.toggle('show');
+        $('#lpIcon').addEventListener('click', toggleLP);
+        $('#launchpadToggle').addEventListener('click', toggleLP);
+        $$('.lp-app').forEach(a => a.addEventListener('click', () => {
+            openApp(a.dataset.open);
+            lp.classList.remove('show');
+        }));
+
+        // ===== Apps: Notes, Safari, Settings =====
+        // Notes
+        const notesArea = $('#notesArea');
+        notesArea.value = localStorage.getItem('tahoe_notes') || '';
+        notesArea.addEventListener('input', () => localStorage.setItem('tahoe_notes', notesArea.value));
+
+        // Safari (simple sandboxed iframe)
+        const safariUrl = $('#safari-url');
+        const safariFrame = $('#safari-frame');
+        const safariGo = $('#safari-go');
+        const safariBack = $('#safari-back');
+        const safariForward = $('#safari-forward');
+        const safariRefresh = $('#safari-refresh');
+
+        // History stack for simple back/forward
+        let safariHistory = [],
+            safariIndex = -1;
+
+        function loadSafari(url, addHistory = true) {
+            if (!/^https?:\/\//.test(url)) url = 'https://' + url;
+            safariFrame.src = url;
+            safariUrl.value = url;
+            if (addHistory) {
+                safariHistory = safariHistory.slice(0, safariIndex + 1);
+                safariHistory.push(url);
+                safariIndex++;
+            }
+        }
+
+        // Go button & Enter
+        safariGo.addEventListener('click', () => loadSafari(safariUrl.value));
+        safariUrl.addEventListener('keydown', e => {
+            if (e.key === 'Enter') loadSafari(safariUrl.value);
+        });
+
+        // Back / Forward
+        safariBack.addEventListener('click', () => {
+            if (safariIndex > 0) {
+                safariIndex--;
+                loadSafari(safariHistory[safariIndex], false);
+            }
+        });
+        safariForward.addEventListener('click', () => {
+            if (safariIndex < safariHistory.length - 1) {
+                safariIndex++;
+                loadSafari(safariHistory[safariIndex], false);
+            }
+        });
+
+        // Refresh
+        safariRefresh.addEventListener('click', () => {
+            if (safariIndex >= 0) loadSafari(safariHistory[safariIndex], false);
+        });
+
+
+        // Settings
+        const wallSel = $('#wallpaper');
+        const blurRange = $('#blur');
+        const accentPicker = $('#accent');
+
+        function applyWallpaper(v) {
+            switch (v) {
+                case 'sunset':
+                    document.body.style.background = 'linear-gradient(180deg,#ffb5a7,#fcd5ce,#f8edeb)';
+                    break;
+                case 'mint':
+                    document.body.style.background = 'linear-gradient(180deg,#c1ffd7,#e9ffec,#f6fff6)';
+                    break;
+                case 'graphite':
+                    document.body.style.background = 'linear-gradient(180deg,#6b7280,#9aa0aa,#c9cdd5)';
+                    break;
+                default:
+                    document.body.style.background = 'linear-gradient(180deg,#b7cdfd,#dfe9ff 40%,#eef4ff)';
+            }
+            localStorage.setItem('tahoe_wallpaper', v);
+        }
+
+        function applyBlur(v) {
+            document.documentElement.style.setProperty('--blur', v + 'px');
+            document.querySelectorAll('.menubar,.dock,.window').forEach(el => {
+                el.style.backdropFilter = `blur(${v}px) saturate(180%)`;
+                el.style.webkitBackdropFilter = `blur(${v}px) saturate(180%)`;
+            });
+            localStorage.setItem('tahoe_blur', v);
+        }
+
+        function applyAccent(v) {
+            document.documentElement.style.setProperty('--accent', v);
+            document.querySelectorAll('button, .menu:hover').forEach(el => el.style.outlineColor = v);
+            localStorage.setItem('tahoe_accent', v);
+        }
+
+        // Persist settings
+        applyWallpaper(localStorage.getItem('tahoe_wallpaper') || 'default');
+        applyBlur(localStorage.getItem('tahoe_blur') || 20);
+        applyAccent(localStorage.getItem('tahoe_accent') || '#2b7fff');
+        wallSel.value = localStorage.getItem('tahoe_wallpaper') || 'default';
+        blurRange.value = localStorage.getItem('tahoe_blur') || 20;
+        accentPicker.value = localStorage.getItem('tahoe_accent') || '#2b7fff';
+
+        wallSel.addEventListener('change', e => applyWallpaper(e.target.value));
+        blurRange.addEventListener('input', e => applyBlur(e.target.value));
+        accentPicker.addEventListener('input', e => applyAccent(e.target.value));
+
+        $('#about').addEventListener('click', () => {
+            alert('macOS 26 Tahoe — HTML/CSS/JS demo');
+        });
+
+        // Open Finder by default
+        openApp('finder');
+    </script>
+</body>
+
+</html>
