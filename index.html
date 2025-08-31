@@ -598,64 +598,92 @@
             icon.addEventListener('click', () => openApp(icon.dataset.open));
         });
 
-        // Traffic buttons
-        $$('.window').forEach(win => {
-            win.addEventListener('mousedown', () => bringToFront(win));
-            const bar = win.querySelector('.titlebar');
-            const resize = win.querySelector('.resize');
+// Traffic buttons
+$$('.window').forEach(win => {
+    win.addEventListener('pointerdown', () => bringToFront(win));
+    const bar = win.querySelector('.titlebar');
+    const resize = win.querySelector('.resize');
 
-            // drag
-            let drag = false,
-                offX = 0,
-                offY = 0;
-            bar.addEventListener('mousedown', e => {
-                if (e.target.classList.contains('btn')) return; // allow clicking buttons
-                drag = true;
-                offX = e.clientX - win.offsetLeft;
-                offY = e.clientY - win.offsetTop;
-                bringToFront(win);
-            });
-            window.addEventListener('mousemove', e => {
-                if (!drag) return;
-                const x = e.clientX - offX;
-                const y = e.clientY - offY;
-                win.style.left = x + 'px';
-                win.style.top = y + 'px';
-            });
-            window.addEventListener('mouseup', () => drag = false);
+    // drag
+    let drag = false,
+        dragId = null,  // track which pointer is dragging
+        offX = 0,
+        offY = 0;
 
-            // resize
-            let rs = false,
-                startW = 0,
-                startH = 0,
-                sx = 0,
-                sy = 0;
-            resize.addEventListener('mousedown', e => {
-                rs = true;
-                startW = win.offsetWidth;
-                startH = win.offsetHeight;
-                sx = e.clientX;
-                sy = e.clientY;
-                e.preventDefault();
-                bringToFront(win);
-            });
-            window.addEventListener('mousemove', e => {
-                if (!rs) return;
-                const dw = e.clientX - sx;
-                const dh = e.clientY - sy;
-                win.style.width = Math.max(280, startW + dw) + 'px';
-                win.style.height = Math.max(200, startH + dh) + 'px';
-            });
-            window.addEventListener('mouseup', () => rs = false);
+    bar.addEventListener('pointerdown', e => {
+        if (e.target.classList.contains('btn')) return; // allow clicking buttons
+        if (drag) return; // already dragging with another pointer
+        drag = true;
+        dragId = e.pointerId;
+        offX = e.clientX - win.offsetLeft;
+        offY = e.clientY - win.offsetTop;
+        bringToFront(win);
+        e.preventDefault();
+    });
 
-            // buttons
-            win.querySelector('[data-action="close"]').addEventListener('click', () => closeApp(win.dataset.app));
-            win.querySelector('[data-action="min"]').addEventListener('click', () => win.classList.add('hidden'));
-            win.querySelector('[data-action="max"]').addEventListener('click', () => win.classList.toggle('maximized'));
+    window.addEventListener('pointermove', e => {
+        if (!drag || e.pointerId !== dragId) return;
+        const x = e.clientX - offX;
+        const y = e.clientY - offY;
+        win.style.left = x + 'px';
+        win.style.top = y + 'px';
+    });
 
-            // double-click titlebar to zoom
-            bar.addEventListener('dblclick', () => win.classList.toggle('maximized'));
-        });
+    window.addEventListener('pointerup', e => {
+        if (e.pointerId === dragId) {
+            drag = false;
+            dragId = null;
+        }
+    });
+
+    // resize
+    let rs = false,
+        resizeId = null,
+        startW = 0,
+        startH = 0,
+        sx = 0,
+        sy = 0;
+
+    resize.addEventListener('pointerdown', e => {
+        if (rs) return; // already resizing
+        rs = true;
+        resizeId = e.pointerId;
+        startW = win.offsetWidth;
+        startH = win.offsetHeight;
+        sx = e.clientX;
+        sy = e.clientY;
+        bringToFront(win);
+        e.preventDefault();
+    });
+
+    window.addEventListener('pointermove', e => {
+        if (!rs || e.pointerId !== resizeId) return;
+        const dw = e.clientX - sx;
+        const dh = e.clientY - sy;
+        win.style.width = Math.max(280, startW + dw) + 'px';
+        win.style.height = Math.max(200, startH + dh) + 'px';
+    });
+
+    window.addEventListener('pointerup', e => {
+        if (e.pointerId === resizeId) {
+            rs = false;
+            resizeId = null;
+        }
+    });
+
+    // buttons
+    win.querySelector('[data-action="close"]')
+        .addEventListener('click', () => closeApp(win.dataset.app));
+
+    win.querySelector('[data-action="min"]')
+        .addEventListener('click', () => win.classList.add('hidden'));
+
+    win.querySelector('[data-action="max"]')
+        .addEventListener('click', () => win.classList.toggle('maximized'));
+
+    // double-click titlebar to zoom
+    bar.addEventListener('dblclick', () => win.classList.toggle('maximized'));
+});
 
         // ===== Launchpad =====
         const lp = $('#launchpad');
@@ -774,9 +802,6 @@
         $('#about').addEventListener('click', () => {
             alert('macOS 26 Tahoe — HTML/CSS/JS demo');
         });
-
-        // Open Finder by default
-        openApp('finder');
     </script>
 </body>
 
